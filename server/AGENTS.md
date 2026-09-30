@@ -1,0 +1,1 @@
+Human decision controls belong to the human. Agents may open checkpoint URLs and read evidence, but must not click Approve or Reject, use human cookies, or simulate browser decisions. Use a scoped agent token and the terminal wait API. After rejection ask the human for the reason, then submit it bound to the decision identity.
