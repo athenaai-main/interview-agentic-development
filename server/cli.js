@@ -1,4 +1,4 @@
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { exec, git } from './runtime.js';
@@ -9,7 +9,7 @@ async function credential(){return JSON.parse(await readFile(resolve(dataDir,'cr
 try {
 if(args[0]==='demo-setup') {
  const path=resolve(dataDir,'demo-app');await mkdir(path,{recursive:true});
- try{await git(path,'rev-parse','HEAD');}catch{await exec('git',['init','-b','main',path]);await writeFile(resolve(path,'app.js'),`import {createServer} from 'node:http';\ncreateServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Task board</title><h1>Task board</h1><p>Nothing here yet.</p>');}).listen(Number(process.env.PORT||4200),'127.0.0.1');\n`);await writeFile(resolve(path,'.gitignore'),'node_modules/\n');await git(path,'add','.');await git(path,'-c','user.name=Factory Demo','-c','user.email=factory@localhost','commit','-m','Demo baseline');}
+ try{if(await git(path,'rev-parse','--show-toplevel')!==await realpath(path))throw Error('Demo requires its own Git repository');await git(path,'rev-parse','HEAD');}catch{await exec('git',['init','-b','main',path]);await writeFile(resolve(path,'app.js'),`import {createServer} from 'node:http';\ncreateServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Task board</title><h1>Task board</h1><p>Nothing here yet.</p>');}).listen(Number(process.env.PORT||4200),'127.0.0.1');\n`);await writeFile(resolve(path,'.gitignore'),'node_modules/\n');await git(path,'add','.');await git(path,'-c','user.name=Factory Demo','-c','user.email=factory@localhost','commit','-m','Demo baseline');}
  const configPath=resolve('factory.config.json');let config;try{config=JSON.parse(await readFile(configPath,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;config={repositories:{}};}
  config.repositories.demo={path,startCommand:'node app.js',checkCommand:'node --check app.js',readinessPath:'/',publishDraftPr:false};await writeFile(configPath,JSON.stringify(config,null,2));console.log(`Created local demo repository ${path}. Restart server to load configuration. Draft PR publication is disabled; use a configured GitHub target for full workflow.`);
 }else if(args[0]==='intake') {const input=JSON.parse(await readFile(args[1],'utf8'));const c=await credential();const out=await request('/issues',{body:input,token:c.operatorToken});await writeFile(resolve(dataDir,`${out.issue.id}.token`),out.agentToken,{mode:0o600});console.log(JSON.stringify(out,null,2));}
