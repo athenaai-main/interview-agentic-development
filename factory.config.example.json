@@ -1,0 +1,13 @@
+{
+  "repositories": {
+    "your-app": {
+      "path": "/absolute/path/to/git/repository",
+      "installCommand": "npm ci",
+      "startCommand": "npm run dev -- --host 127.0.0.1 --port {port}",
+      "readinessPath": "/",
+      "checkCommand": "npm test",
+      "publishDraftPr": false,
+      "githubRepository": "owner/repo"
+    }
+  }
+}
