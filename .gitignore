@@ -2,3 +2,5 @@ node_modules/
 .factory/
 .env
 *.sqlite*
+
+factory.config.json

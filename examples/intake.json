@@ -1,0 +1,1 @@
+{"title":"Add an accessible task entry form","description":"Add a labeled task input and an Add task button to the demo task board. Submitting nonempty text adds a visible list item without a page reload. Ignore blank submissions. No persistence or external services.","repositoryId":"demo","baselineRevision":"main"}

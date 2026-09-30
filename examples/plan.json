@@ -1,0 +1,6 @@
+{
+  "expectedIssueVersion": 1,
+  "prd": "Enhance the demo task board with an accessible task-entry form. Keep the existing Task board heading. A labeled text input and Add task button accept a task. Submitting nonempty trimmed text appends a text-only list item and clears the input. Blank submissions do nothing. Keyboard Enter submits. The list is in-memory for the current page only. No external services, packages, or backend changes are required. Use safe textContent rather than injecting user text into HTML. Preserve the demo server's PORT environment support.",
+  "slices": [{"title":"Task entry and list", "description":"Add the labeled form, empty list, and client-side submit handler in app.js. Keep the web server local and dependency-free."}],
+  "acceptanceCriteria": ["Task board heading remains", "Input has a programmatically associated label", "Button and Enter submit nonempty trimmed text", "Blank input does not create a task", "New tasks appear without reloading and input clears", "User input is rendered as plain text", "node --check app.js passes", "Baseline and candidate run independently on separate PORT values"]
+}

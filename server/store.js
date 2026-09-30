@@ -17,6 +17,7 @@ export class Store {
       CREATE UNIQUE INDEX IF NOT EXISTS one_active_issue ON jobs(issue_id) WHERE status='running';
       CREATE TABLE IF NOT EXISTS slots(slot INTEGER PRIMARY KEY CHECK(slot BETWEEN 1 AND 3), job_id TEXT UNIQUE);
       INSERT OR IGNORE INTO slots VALUES(1,NULL),(2,NULL),(3,NULL);
+      CREATE TABLE IF NOT EXISTS previews(id TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tokens(digest TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT, issue_id TEXT NOT NULL, time INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS idempotency(scope TEXT NOT NULL, key TEXT NOT NULL, digest TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(scope,key));`);
@@ -75,6 +76,7 @@ export class Store {
   heartbeat(rid) { return this.tx(()=>{const j=this.reservation(rid);j.reservation.leaseExpiry=now()+60000;this.saveJob(j);return j.reservation;}); }
   release(j,status) { j.status=status;j.finishedAt=now();this.saveJob(j);this.db.prepare('UPDATE slots SET job_id=NULL WHERE job_id=?').run(j.id); }
   result(rid,b) { const j=this.reservation(rid),i=this.issue(j.issueId); requireThat(JSON.stringify(j.inputRefs)===JSON.stringify(b.inputRefs),'stale_input_refs'); requireThat(allowed[j.type].includes(b.outcome),'invalid_outcome',400);
+    if(['plan_review','code_review'].includes(j.type) && b.outcome==='pass')requireThat(!b.findings?.length,'passing_review_has_findings');
     if(['prototype','implementation'].includes(j.type) && b.outcome!=='blocked') { requireThat(b.commitSha && b.branch && b.worktree && b.checks?.every(c=>c.commitSha===b.commitSha),'missing_commit_evidence',400); if(j.type==='prototype') requireThat(b.prUrl,'draft_pr_required',400); }
     this.release(j,'completed'); j.result=b; this.saveJob(j); const a=this.artifact(i,j.type,{...b,jobId:j.id,attempt:j.attempt}); i.refs[j.type]=a.id; this.event(i.id,'job_completed',{jobId:j.id,outcome:b.outcome,rationale:b.rationale});
     if(b.outcome==='blocked' || b.outcome==='needs_human_input') { i.pauseReason=b.rationale; i.resumeJobType=j.type; this.save(i,'paused'); }

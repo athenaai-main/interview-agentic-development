@@ -28,7 +28,7 @@ export function createApp({store,runtime,operatorToken,workerToken,pairingCode,o
   route('get','/api/v1/auth/session',async(req,res)=>{const t=human(req);res.json({csrf:t.csrf,sessionId:t.sessionId});});
   route('get','/api/v1/issues',async(req,res)=>{if(req.headers.authorization)operator(req);else human(req);res.json({issues:store.list(),workers:store.summary()});});
   route('post','/api/v1/issues',async(req,res)=>{operator(req);const b=z.object({title:text,description:text,repositoryId:text,baselineRevision:text}).parse(req.body);const baselineSha=await runtime.baseline(b.repositoryId,b.baselineRevision);res.status(201).json(once(req,'intake',b,()=>store.create({...b,baselineSha})));});
-  route('get','/api/v1/issues/:id',async(req,res)=>{reader(req,req.params.id);const i=store.issue(req.params.id);res.json({...i,artifacts:store.artifacts(i.id),jobs:store.jobs(i.id),events:store.events(i.id),previews:runtime.snapshot(i.id)});});
+  route('get','/api/v1/issues/:id',async(req,res)=>{reader(req,req.params.id);const i=store.issue(req.params.id);const previews=runtime.snapshot(i.id);const errors=Object.entries(previews).filter(([,p])=>p?.startupError).map(([label,p])=>`${label} preview startup failed at commit ${p.commitSha}: ${p.startupError}. Log: ${p.logPath}`).join('\n');res.json({...i,harnessPrompt:`${errors}\nIssue ${i.id}: inspect current artifacts and diagnose the failure. Preserve revision bindings. ${i.checkpointId?'Open '+origin+'/checkpoints/'+i.checkpointId:''}`,artifacts:store.artifacts(i.id),jobs:store.jobs(i.id),events:store.events(i.id),previews:runtime.snapshot(i.id)});});
   route('get','/api/v1/issues/:id/events',async(req,res)=>{reader(req,req.params.id);const after=z.coerce.number().int().nonnegative().parse(req.query.after||0);res.json(store.events(req.params.id,after));});
   route('post','/api/v1/issues/:id/plans',async(req,res)=>{store.auth(bearer(req),'plan',req.params.id);const b=plan.parse(req.body);res.json(once(req,`plan:${req.params.id}`,b,()=>store.submitPlan(req.params.id,b)));});
   route('post','/api/v1/issues/:id/agent-tokens',async(req,res)=>{human(req,true);store.issue(req.params.id);const b=z.object({operations:z.array(z.enum(['read','plan','reason'])).min(1)}).parse(req.body);res.json(once(req,`token:${req.params.id}`,b,()=>({agentToken:store.mint({issueId:req.params.id,ops:b.operations})})));});
@@ -46,9 +46,14 @@ export function createApp({store,runtime,operatorToken,workerToken,pairingCode,o
   route('post','/api/v1/reservations/:id/result',async(req,res)=>{reservation(req,req.params.id);const b=result.parse(req.body),scope=`result:${req.params.id}`;const old=store.db.prepare('SELECT key FROM idempotency WHERE scope=? AND key=?').get(scope,req.headers['idempotency-key']||'');
     if(!old){const j=store.reservation(req.params.id),i=store.issue(j.issueId);
       if(['prototype','implementation'].includes(j.type)&&b.outcome!=='blocked')await runtime.verify(i,b);
-      if(j.type==='prototype'&&b.outcome==='ready_for_review')await runtime.ensurePreviews(i,b);
-      if(j.type==='code_review'&&b.outcome==='pass'){const a=store.row('artifacts',j.inputRefs.implementation);await runtime.verify(i,a);requireThat(a.checks?.length>0&&a.checks.every(c=>c.exitCode===0),'checks_not_passing');requireThat(b.commitSha===a.commitSha,'review_commit_mismatch');await runtime.ensurePreviews(i,a);}
-    }res.json(once(req,scope,b,()=>store.result(req.params.id,b)));});
+      
+      if(j.type==='code_review'&&b.outcome==='pass'){const a=store.row('artifacts',j.inputRefs.implementation);await runtime.verify(i,a);requireThat(a.checks?.length>0&&a.checks.every(c=>c.exitCode===0),'checks_not_passing');requireThat(b.commitSha===a.commitSha,'review_commit_mismatch');}
+    }const out=once(req,scope,b,()=>store.result(req.params.id,b));
+    if(!old && ['awaiting_prototype_approval','awaiting_final_review'].includes(out.issue.state)) {
+      const candidate=store.row('artifacts',out.issue.state==='awaiting_final_review'?out.issue.refs.implementation:out.issue.refs.prototype);
+      runtime.ensurePreviews(out.issue,candidate).then(()=>store.event(out.issue.id,'previews_ready',{commitSha:candidate.commitSha})).catch(e=>store.event(out.issue.id,'preview_startup_failed',{message:e.message,commitSha:candidate.commitSha}));
+    }
+    res.json(out);});
   route('post','/api/v1/reservations/:id/failure',async(req,res)=>{reservation(req,req.params.id);const b=z.object({message:text,transient:z.boolean(),sideEffectsReconciled:z.boolean()}).parse(req.body);res.json(once(req,`failure:${req.params.id}`,b,()=>store.failure(req.params.id,b)));});
   route('post','/api/v1/issues/:id/previews/restart',async(req,res)=>{human(req,true);const i=store.issue(req.params.id);requireThat(['awaiting_prototype_approval','awaiting_final_review'].includes(i.state),'invalid_state');const a=store.row('artifacts',i.state==='awaiting_final_review'?i.refs.implementation:i.refs.prototype);await runtime.verify(i,a);res.json(await runtime.ensurePreviews(i,a));});
   route('get','/',async(req,res)=>res.type('html').send(await readFile(new URL('./review.html',import.meta.url),'utf8')));
